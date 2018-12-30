@@ -39,3 +39,28 @@ int main() {
 }
 ```
 
+### 2. Pangolin
+
+1. 从github上面下载：
+
+   ```shell
+   git clone https://github.com/stevenlovegrove/Pangolin.git
+   ```
+
+2. 安装依赖环境：
+
+   ```shell
+   sudo apt-get install libglew-dev
+   ```
+
+3. 编译：
+
+   ```shell
+   mkdir build
+   cd build
+   cmake ..
+   make
+   ```
+
+   > 这里需要注意的是，如果当前系统环境采用的是`Anaconda`，那么可能会出现错误（一般是因为你可能`conda`安装过`libpng`，所以导致环境调用的是Anaconda下面的`libpng`）。最简单的方式是就是切换到`system`后再重新编译安装
+
