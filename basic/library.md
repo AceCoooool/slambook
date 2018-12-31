@@ -64,3 +64,35 @@ int main() {
 
    > 这里需要注意的是，如果当前系统环境采用的是`Anaconda`，那么可能会出现错误（一般是因为你可能`conda`安装过`libpng`，所以导致环境调用的是Anaconda下面的`libpng`）。最简单的方式是就是切换到`system`后再重新编译安装
 
+### 3. Sophus
+
+1. 从github上面下载
+
+   ```shell
+   git clone https://github.com/strasdat/Sophus.git
+   ```
+
+2. 安装
+
+   ```shell
+   cd Sophus
+   git checkout a621ff  # 切换到非模板分支
+   mkdir build
+   cd build
+   cmake ..
+   make
+   ```
+
+3. 使用
+
+   ```shell
+   cmake_minimum_required( VERSION 2.8 )
+   project( useSophus )
+   
+   # 为使用 sophus，您需要使用find_package命令找到它
+   find_package( Sophus REQUIRED )
+   include_directories( ${Sophus_INCLUDE_DIRS} )
+   
+   add_executable( useSophus useSophus.cpp )
+   target_link_libraries( useSophus ${Sophus_LIBRARIES} )
+   ```
