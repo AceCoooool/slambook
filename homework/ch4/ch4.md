@@ -189,9 +189,27 @@ $$
 >$$
 >
 
-TODO
+> 参考[Derivation of Adjoint for SO(3)](https://math.stackexchange.com/questions/2190603/derivation-of-adjoint-for-so3)，[Ethan Eade](http://www.ethaneade.org/lie.pdf)
 
+1. 先对两边同时取$log$操作：
+   左边：
+   $$
+   \log(R\exp(p^\land)R^T)=Rp^\land R^T
+   $$
 
+   > 这条式子个人不知道怎么推出来，[logarithm](https://en.wikipedia.org/wiki/Logarithm_of_a_matrix)应该需要对角矩阵才行吧？
+
+   右边：
+   $$
+   \log(\exp((Rp)^\land))=(Rp)^\land
+   $$
+
+2. 那么假设$Rp^\land R^T=(Rp)^\land$，它代表的含义其实也是蛮明确的：反旋转+叉积+旋转 = 旋转后再叉积。下面我们不妨将上述操作作用在一个向量$v$上面：
+   右边乘$v$：
+   $$
+   (Rp)^\land v=(Rp)\times v=Rp\times (RR^T v)=R[p\times (R^Tv)]=Rp^\land R^T v
+   $$
+   等于左边。所以得证。
 
 ### 7. 仿照左扰动的推导，推导$SO(3)$和$SE(3)$在右扰动下的导数
 
