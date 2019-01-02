@@ -1,3 +1,0 @@
-/home/ace/GitOwn/slambook/code/ch5/imageBasics/build/CMakeFiles/edit_cache.dir
-/home/ace/GitOwn/slambook/code/ch5/imageBasics/build/CMakeFiles/imageBasics.dir
-/home/ace/GitOwn/slambook/code/ch5/imageBasics/build/CMakeFiles/rebuild_cache.dir
