@@ -192,7 +192,7 @@ MatrixXd method1(const MatrixXd &A, const MatrixXd &b) {
 }
 ```
 
-> 必须是方阵
+> 必须是方阵，$A$满秩
 
 ② QR分解法：适合非方阵和方阵 当方程组有解时的出的是真解，若方程组无解得出的是近似解
 

@@ -1,0 +1,3 @@
+/home/ace/GitOwn/slambook/code/ch3/visualizeGeometry/build/CMakeFiles/edit_cache.dir
+/home/ace/GitOwn/slambook/code/ch3/visualizeGeometry/build/CMakeFiles/visualizeGeometry.dir
+/home/ace/GitOwn/slambook/code/ch3/visualizeGeometry/build/CMakeFiles/rebuild_cache.dir

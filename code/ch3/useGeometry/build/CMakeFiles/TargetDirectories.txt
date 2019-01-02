@@ -1,0 +1,3 @@
+/home/ace/GitOwn/slambook/code/ch3/useGeometry/build/CMakeFiles/edit_cache.dir
+/home/ace/GitOwn/slambook/code/ch3/useGeometry/build/CMakeFiles/eigenGeometry.dir
+/home/ace/GitOwn/slambook/code/ch3/useGeometry/build/CMakeFiles/rebuild_cache.dir
