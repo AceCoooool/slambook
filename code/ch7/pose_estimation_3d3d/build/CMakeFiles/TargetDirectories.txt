@@ -1,3 +1,0 @@
-/home/ace/GitOwn/slambook/code/ch7/pose_estimation_3d3d/build/CMakeFiles/edit_cache.dir
-/home/ace/GitOwn/slambook/code/ch7/pose_estimation_3d3d/build/CMakeFiles/pose_estimation_3d3d.dir
-/home/ace/GitOwn/slambook/code/ch7/pose_estimation_3d3d/build/CMakeFiles/rebuild_cache.dir
