@@ -35,10 +35,12 @@
    cd opencv-3.4.5
    mkdir build
    cd build
-   cmake ..
+   cmake -D WITH_VTK=ON ..
    make -j4
    sudo make install
    ```
+
+> 这里稍微需注意一下，请注意当前python的环境，因为有时候我们会在conda里面装了opencv，所以最好切换到系统的python下面
 
 ## 2. PCL
 

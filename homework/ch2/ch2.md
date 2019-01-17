@@ -132,7 +132,7 @@ g++ -S -masm=intel test.cpp
 
 #### 静态链接库
 
-静态链接库是后缀名为.a的文件。它有多个后缀为你.o的目标文件组成。
+静态链接库是后缀名为`.a`的文件。它由多个后缀名为`.o`的目标文件组成。
 
 使用`-c`参数可以使编译在链接前终止，所以生成的是源文件对应的目标文件。
 
@@ -150,7 +150,7 @@ g++ -static -o p2 main2.o ./libvector.a
 
 #### 动态链接库
 
-后缀名为`.so`的是动态共享链接库文件，其中的s就是shared共享的意思，如下命令：
+后缀名为`.so`的是动态共享链接库文件，其中的`s`就是shared共享的意思，如下命令：
 
 ```shell
 g++ -shared -fPIC -o libvector.so addvec.c multvec.c
@@ -173,7 +173,7 @@ g++ -o p2 main2.cpp ./libvector.so
 
 ### 7. 阅读《cmake实践》，了解cmake的其他语法
 
-下载链接：[cmake实践](http://file.ncnynl.com/ros/CMake%20Practice.pdf)（个人还是觉得遇到了再去查更好）
+下载链接：[cmake实践](http://file.ncnynl.com/ros/CMake%20Practice.pdf)（个人还是觉得遇到问题了再去查）
 
 ### 8. 完善hello SLAM小程序，把它做成一个小程序库，安装到本地硬盘中。然后，新建一个工程，使用find_package找这个库并调用
 
@@ -181,7 +181,7 @@ g++ -o p2 main2.cpp ./libvector.so
 
 TODO
 
-### 9. 寻找其他cmake教学材料，深入了解cmake，例如[Cmake-tutorial](https://github.com/TheErk/Cmake-tutorial)
+### 9. 寻找其他cmake教学材料，深入了解cmake，例如[cmake-tutorial](https://github.com/TheErk/Cmake-tutorial)
 
 1. [CMake 入门实战](http://www.hahack.com/codes/cmake/)
 2. [Cmake如何入门-知乎](https://www.zhihu.com/question/58949190)：基本去这里寻找资料吧 :smile:

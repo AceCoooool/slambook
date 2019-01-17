@@ -6,11 +6,11 @@
 
 `sudo apt-get install libeigen3-dev`（友情提示：个人在Ubuntu16.04下面安装的不是最新版本）
 
-> 比如遇到版本太老的bug，比如CUDA-9.0不支持。可以选择方式2
+> 比如遇到版本太老的bug（比如CUDA-9.0不支持等）。可以选择方式2
 
 ### ② 方式2（官网下载安装）
 
-1. 从[Eigen官网](http://eigen.tuxfamily.org/index.php?title=Main_Page)下载最新的版本（记录的时候最新版本是3.3.7）
+1. 从[Eigen官网](http://eigen.tuxfamily.org/index.php?title=Main_Page)下载最新的版本（个人安装的时候最新版本是3.3.7）
 
 2. 在下载的目录下面执行下述目录
 

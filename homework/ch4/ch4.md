@@ -1,5 +1,7 @@
 ## 习题4
 
+> 注：这部分的证明你也可以参考：[课后习题解答-CSDN](https://blog.csdn.net/qq_17032807/article/details/84942548)
+
 ### 1. 验证$SO(3),SE(3)$和$Sim(3)$关于乘法成群
 
 对于集合和运算，群$G=(A,\cdot)$满足下述四个条件：
@@ -76,7 +78,7 @@
    $$
    (\Phi_1\Phi_2-\Phi_2\Phi_1)=\begin{bmatrix}-a_3b_3-a_2b_2&a_2b_1&a_3b_1\\ a_1b_2&-a_3b_3-a_1b_1&a_3b_2\\ a_1b_3&a_2b_3& -a_2b_2-a_1b_1\end{bmatrix}-\\ \begin{bmatrix}-a_3b_3-a_2b_2&a_1b_2&a_1b_3\\ a_2b_1&-a_3b_3-a_1b_1&a_2b_3\\ a_3b_1&a_3b_2& -a_2b_2-a_1b_1\end{bmatrix}=\\ \begin{bmatrix}0&a_2b_1-a_1b_2&a_3b_1-a_1b_3\\ a_1b_2-a_2b_1&0&a_3b_2-a_2b_3\\ a_1b_3-a_3b_1&a_2b_3-a_3b_2& 0\end{bmatrix}
    $$
-   所以也为反对称矩阵，因此$(\Phi_1\Phi_2-\Phi_2\Phi_1)^{\lor}\in R^3$
+   也为反对称矩阵，因此$(\Phi_1\Phi_2-\Phi_2\Phi_1)^{\lor}\in R^3$
 
 2. 双线性：
    $$
@@ -143,7 +145,7 @@ $$
 
 ① 最直接的方式就是两边都采用具体的形式展开，比较是不是即可。（写起来很长，就略了。）
 
-② 左边很容易发现为反对称矩阵：
+② 左边很容易证明为反对称矩阵（所以我们只需证明几个位置即可）：
 $$
 (Rp^\land R^T)^T=R(p^\land)^TR=-Rp^\land R
 $$
@@ -161,7 +163,7 @@ $$
    $$
    Rp=xR_1+yR_2+zR_3
    $$
-   因为我们已经知道左边为反对称矩阵，因此我们只需检查3个位置的值即可（12, 13, 23位置）
+   因为我们已经知道左边为反对称矩阵，因此我们只需检查3个位置的值即可（下标为12, 13, 23位置）
 
 3. 下边以$i=1,j=2$为例（其他两个位置同样的方式）
    左边矩阵在$i=1,j=2$的值：
@@ -231,5 +233,45 @@ $$
 
 ### 8. 搜索cmake的find_package指令是如何运作的。它有那些可选的参数？为了让cmake找到某个库，需要哪些先决条件？
 
-TODO
+> 这部分内容主要来自：[find_package与CMake如何查找链接库详解](https://blog.csdn.net/bytxl/article/details/50637277)
 
+#### 1. FIND_PACKAGE参数
+
+`FIND_PACKAGE( <name> [version] [EXACT] [QUIET] [NO_MODULE] [ [ REQUIRED | COMPONENTS ] [ componets... ] ] )`：用来调用预定义在` CMAKE_MODULE_PATH `下的`Find<name>.cmake`模块（也可以自己定义 `Find<name>`模块，将其放入工程的某个目录中，通过 `SET(CMAKE_MODULE_PATH dir)`设置查找路径，供工程`FIND_PACKAGE`使用）
+
+> 这条命令执行后，CMake 会到变量 `CMAKE_MODULE_PATH` 指示的目录中查找文件` Findname.cmake` 并执行。
+
+下面来说明下其中各个参数的含义（作用）：
+
+- version 参数：它是正在查找的包应该兼容的版本号（格式是`major[.minor[.patch[.tweak]]]`）（例如OpenCV采用3.x版本，采用的是`find_package(OpenCV 3 REQUIRED)` --- 这里的3就是版本号）
+
+- EXACT选项：要求版本号必须精确匹配。如果在find-module内部对该命令的递归调用没有给定[version]参数，那么[version]和EXACT选项会自动地从外部调用前向继承。对版本的支持目前只存在于包和包之间
+- QUIET 参数：会禁掉包没有被发现时的警告信息。对应于`Find<name>.cmake`模块中的 `NAME_FIND_QUIETLY`
+- REQUIRED 参数：其含义是指是否是工程必须的，表示如果报没有找到的话，cmake的过程会终止，并输出警告信息。对应于`Find<name>.cmake`模块中的` NAME_FIND_REQUIRED `变量。
+- COMPONENTS参数：在REQUIRED选项之后，或者如果没有指定REQUIRED选项但是指定了COMPONENTS选项，在它们的后面可以列出一些与包相关（依赖）的部件清单（components list）
+
+> 注：比较常用的是version，COMPONENTS和REQUIRED
+
+#### 2. FIND_PACKAGE如何查找
+
+1. `find_package()` 命令会在模块路径中寻找 `Find<name>.cmake` ，这是查找库的一个典型方式。首先`CMake`查看`${CMAKE_MODULE_PATH}` 中的所有目录，然后再查看它自己的模块目录 `<CMAKE_ROOT>/share/cmake-x.y/Modules/ `。
+2. 如果没找到这样的文件，会寻找 `<Name>Config.cmake` 或者 `<lower-case-name>-config.cmake` ，它们是假定库会安装的文件（但是目前还没有多少库会安装它们）。不做检查，直接包含安装的库的固定值。
+
+第1种方式称为模块模式，第2种方式称为配置模式。配置模式的文件的编写见 [这里的文档](http://vtk.org/Wiki/CMake/Tutorials/How_to_create_a_ProjectConfig.cmake_file) 。可能还会用到 [importing and exporting targets](http://vtk.org/Wiki/CMake/Tutorials/Exporting_and_Importing_Targets) 这篇文档。下述主要介绍更常见的第1种方式
+
+**不管使用哪一种模式，只要找到包，就会定义下面这些变量（这些我们在CMakeLists.txt里面要用到）：**
+
+```shell
+<NAME>_FOUND
+<NAME>_INCLUDE_DIRS or <NAME>_INCLUDES
+<NAME>_LIBRARIES or <NAME>_LIBRARIES or <NAME>_LIBS
+<NAME>_DEFINITIONS
+```
+
+这些都在 Find<name>.cmake 文件中。
+
+现在，在你的代码（要使用库 `<name>` 的代码）的顶层目录中的 `CMakeLists.txt` 文件中，我们检查变量`<NAME>_FOUND `来确定包是否被找到。大部分包的这些变量中的包名是全大写的，如 `LIBFOO_FOUND` ，有些包则使用包的实际大小写，如 `LibFoo_FOUND` 。如果找到这个包，我们用` <NAME>_INCLUDE_DIRS` 调用` include_directories()` 命令，用 `<NAME>_LIBRARIES` 调用 `target_link_libraries()` 命令。
+
+#### 3. cmake自带查找模块的外部库
+
+为了能支持各种常见的库和包，CMake自带了很多模块。可以通过命令 `cmake --help-module-list` （输入`cmake --help`，然后双击Tab会有命令提示）得到你的CMake支持的模块的列表。
