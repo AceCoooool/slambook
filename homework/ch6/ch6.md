@@ -28,7 +28,7 @@ $$
 
 ### 2. 调研最速下降法、牛顿法、高斯牛顿法和列文伯格-马夸尔特方法各有什么优缺点。除了我们举的 Ceres 库和g2o 库,还有哪些常用的优化库?你可能会找到一些 MATLAB 上的库。
 
-下面分别重新回顾一下这几种优化方法：
+下面重新回顾一下这几种优化方法：
 
 #### 最速下降法
 ![](png/a1.jpg)
@@ -90,11 +90,158 @@ Dogleg属于Trust Region优化方法，即用置信域的方法在最速下降�
 > 未看具体算法。
 
 ### 5. 阅读 Ceres 的教学材料以更好地掌握它的用法:[ceres-tutorial](http://ceres-solver.org/tutorial.html).
-略。
+#### 常用方式
+
+① 拟合曲线问题
+
+1. 定义代价函数计算模板：
+
+   ```cpp
+   struct CostFunctor {
+      // 往往需要定义构造函数 --- 传入数据
+      template <typename T>
+      bool operator()(const T* const x, T* residual) const {  // x代表待求参数, residual代表偏差
+        // 一系列操作
+      }
+      // 往往有一些内部变量
+   };
+   ```
+
+2. 定义损失函数：
+
+   ```cpp
+   // 模板参数：误差类型, 输出维度, 输入维度(待估计参数维度) --- 此处采用自动求导
+   CostFunction* cost_function = new AutoDiffCostFunction<CostFunctor, 1, 1>(new CostFunctor);
+   ```
+
+   > 此处不仅只有自动求导这一种选项：还有Numerical Diff，后续会提到
+
+3. 定义"问题"：
+
+   ```cpp
+   Problem problem;
+   // 其中nullptr这一项为核函数, 此处无。 x---带估计参数
+   problem.AddResidualBlock(cost_function, nullptr, &x);
+   ```
+
+4. 配置求解器&优化信息（后者用来输出优化过程的信息）
+
+   ```cpp
+   ceres::Solver::Options options;                // 这里有很多配置项可以填
+   options.linear_solver_type = ceres::DENSE_QR;  // 增量方程如何求解
+   options.minimizer_progress_to_stdout = true;   // 输出到cout
+   
+   ceres::Solver::Summary summary;                // 优化信息
+   ```
+
+5. 进行优化：
+
+   ```cpp
+   ceres::Solve(options, &problem, &summary);     // 开始优化
+   
+   // 可以利用 cout << summary.BriefReport() << endl; 查看优化结果报告
+   ```
 
 ### 6. 阅读 g2o 自带的文档,你能看懂它吗?如果还不能完全看懂,请在第十、十一两讲之后回来再看。
 看不懂。
 
+#### 常用方式
+
+① 拟合曲线问题
+
+1. 定义顶点和边的类型
+   顶点：自定义的要继承自`g2o::BaseVertex`
+
+   ```cpp
+   // 曲线模型的顶点, 模板参数: 优化变量维度和数据类型 (_estimate就为此处的数据类型)
+   class CurveFittingVertex : public g2o::BaseVertex<3, Eigen::Vector3d> {
+   public:
+       EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+       virtual void setToOriginImpl() {               // 重置
+           _estimate << 0, 0, 0;
+       }
+   
+       virtual void oplusImpl(const double *update) { // 更新
+           _estimate += Eigen::Vector3d(update);
+       }
+       // 存盘和读盘：留空
+       virtual bool read(istream &in) {}
+       virtual bool write(ostream &out) const {}
+   };
+   ```
+
+   边：自定义的边继承自`g2o::BaseUnaryEdge`
+
+   ```cpp
+   // 误差模型    模板参数: 观测值维度, 类型, 连接顶点类型
+   class CurveFittingEdge : public g2o::BaseUnaryEdge<1, double, CurveFittingVertex> {
+   public:
+       EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+       CurveFittingEdge(double x) : BaseUnaryEdge(), _x(x) {}
+       // 计算曲线模型误差
+       void computeError() {
+           // _vertices为顶点类型, 由上述连接顶点类型所确定
+           const CurveFittingVertex *v = static_cast<const CurveFittingVertex *> (_vertices[0]);
+           const Eigen::Vector3d abc = v->estimate();
+           // 这里写误差
+           _error(0, 0) = _measurement - std::exp(abc(0, 0) * _x * _x + abc(1, 0) * _x + abc(2, 0));
+       }
+       virtual bool read(istream &in) {}
+       virtual bool write(ostream &out) const {}
+   public:
+       double _x;  // x值, y值为_measurement
+   };
+   ```
+
+2. 构建图和选择优化算法（下述是解线性方程情况）
+
+   ```cpp
+   // 每个误差项优化变量维度为3, 误差值维度为1
+   typedef g2o::BlockSolver<g2o::BlockSolverTraits<3, 1> > Block;  
+   // 线性方程求解器
+   Block::LinearSolverType *linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>(); 
+   // 矩阵块求解器
+   Block *solver_ptr = new Block(linearSolver);   
+   
+   // 选择优化方法: 有g2o::OptimizationAlgorithmGaussNewton, g2o::OptimizationAlgorithmDogleg等
+   g2o::OptimizationAlgorithmLevenberg *solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+   
+   g2o::SparseOptimizer optimizer;     // 图模型
+   optimizer.setAlgorithm(solver);     // 设置求解器
+   optimizer.setVerbose(true);         // 打开调试输出
+   
+   ```
+
+3. 添加顶点和边
+
+   ```cpp
+   // 往图中增加顶点
+   CurveFittingVertex *v = new CurveFittingVertex();
+   v->setEstimate(Eigen::Vector3d(0, 0, 0));
+   v->setId(0);
+   optimizer.addVertex(v);
+   
+   // 往图中增加边
+   for (int i = 0; i < N; i++) {
+       CurveFittingEdge *edge = new CurveFittingEdge(x_data[i]);
+       edge->setId(i);
+       edge->setVertex(0, v);                // 设置连接的顶点
+       edge->setMeasurement(y_data[i]);      // 观测数值
+       edge->setInformation(Eigen::Matrix<double, 1, 1>::Identity()); // 这个往往设置为DxD单位矩阵
+       optimizer.addEdge(edge);
+   }
+   ```
+
+4. 优化
+
+   ```cpp
+   optimizer.initializeOptimization();
+   optimizer.optimize(100);  // 100代表最大迭代次数 --- 实际收敛就会停下来
+   ```
+
 ### 7. (*) 请更改曲线拟合实验中的曲线模型,并用 Ceres 和 g2o 进行优化实验。例如,你可以使用更多的参数和更复杂的模型
 
-略。
+这部分其实就是改下函数即可。其他完全一样！！！
+
+这里采用$y=sin(ax+b)$作为拟合对象。（此处取$a=2, b=0.1$）
+

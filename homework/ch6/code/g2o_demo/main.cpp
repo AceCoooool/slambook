@@ -13,15 +13,15 @@
 using namespace std;
 
 // 曲线模型的顶点   模板参数: 优化变量维度和数据类型(_estimate就为此处的数据类型)
-class CurveFittingVertex : public g2o::BaseVertex<3, Eigen::Vector3d> {
+class CurveFittingVertex : public g2o::BaseVertex<2, Eigen::Vector2d> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     virtual void setToOriginImpl() {               // 重置
-        _estimate << 0, 0, 0;
+        _estimate << 0, 0;
     }
 
     virtual void oplusImpl(const double *update) { // 更新
-        _estimate += Eigen::Vector3d(update);
+        _estimate += Eigen::Vector2d(update);
     }
     // 存盘和读盘：留空
     virtual bool read(istream &in) {}
@@ -37,8 +37,8 @@ public:
     void computeError() {
         // _vertices为顶点类型, 由上述连接顶点类型所确定
         const CurveFittingVertex *v = static_cast<const CurveFittingVertex *> (_vertices[0]);
-        const Eigen::Vector3d abc = v->estimate();
-        _error(0, 0) = _measurement - std::exp(abc(0, 0) * _x * _x + abc(1, 0) * _x + abc(2, 0));
+        const Eigen::Vector2d ab = v->estimate();
+        _error(0, 0) = _measurement - std::sin(ab(0, 0) * _x + ab(1, 0));
     }
     virtual bool read(istream &in) {}
     virtual bool write(ostream &out) const {}
@@ -47,9 +47,9 @@ public:
 };
 
 int main(int argc, char **argv) {
-    double a = 1.0, b = 2.0, c = 1.0;         // 真实参数值
+    double a = 2.0, b = 0.1;                  // 真实参数值
     int N = 100;                              // 数据点
-    double w_sigma = 1.0;                     // 噪声Sigma值
+    double w_sigma = 0.1;                     // 噪声Sigma值
     cv::RNG rng;                              // OpenCV随机数产生器
 
     vector<double> x_data, y_data;            // 数据
@@ -59,13 +59,13 @@ int main(int argc, char **argv) {
         double x = i / 100.0;
         x_data.push_back(x);
         y_data.push_back(
-            exp(a * x * x + b * x + c) + rng.gaussian(w_sigma)
+            sin(a * x + b) + rng.gaussian(w_sigma)
         );
         cout << x_data[i] << " " << y_data[i] << endl;
     }
 
     // 构建图优化, 先设定g2o
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<3, 1> > Block;  // 每个误差项优化变量维度为3, 误差值维度为1
+    typedef g2o::BlockSolver<g2o::BlockSolverTraits<2, 1> > Block;  // 每个误差项优化变量维度为3, 误差值维度为1
     Block::LinearSolverType *linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>(); // 线性方程求解器
     Block *solver_ptr = new Block(linearSolver);                    // 矩阵块求解器
     // 梯度下降方法, 从GN, LM, DogLeg 中选
@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
 
     // 往图中增加顶点
     CurveFittingVertex *v = new CurveFittingVertex();
-    v->setEstimate(Eigen::Vector3d(0, 0, 0));
+    v->setEstimate(Eigen::Vector2d(0, 0));
     v->setId(0);
     optimizer.addVertex(v);
 
@@ -103,8 +103,8 @@ int main(int argc, char **argv) {
     cout << "solve time cost = " << time_used.count() << " seconds. " << endl;
 
     // 输出优化值
-    Eigen::Vector3d abc_estimate = v->estimate();
-    cout << "estimated model: " << abc_estimate.transpose() << endl;
+    Eigen::Vector2d ab_estimate = v->estimate();
+    cout << "estimated model: " << ab_estimate.transpose() << endl;
 
     return 0;
 }

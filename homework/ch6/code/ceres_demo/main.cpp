@@ -8,21 +8,21 @@ using namespace std;
 // 代价函数的计算模型
 struct CURVE_FITTING_COST {
     CURVE_FITTING_COST(double x, double y) : _x(x), _y(y) {}
-    // 残差的计算 --- abc: 模型参数, 有3维   residual: 残差
+    // 残差的计算 --- abc: 模型参数, 有2维   residual: 残差
     template<typename T>
-    bool operator()(const T *const abc, T *residual) const {
-        residual[0] = T(_y) - ceres::exp(abc[0] * T(_x) * T(_x) + abc[1] * T(_x) + abc[2]); // y-exp(ax^2+bx+c)
+    bool operator()(const T *const ab, T *residual) const {
+        residual[0] = T(_y) - ceres::sin(ab[0] * T(_x) + ab[1]); // y-sin(ax+b)
         return true;
     }
     const double _x, _y;    // x,y数据
 };
 
 int main(int argc, char **argv) {
-    double a = 1.0, b = 2.0, c = 1.0;     // 真实参数值
+    double a = 2.0, b = 0.1;              // 真实参数值
     int N = 100;                          // 数据点
-    double w_sigma = 1.0;                 // 噪声Sigma值
+    double w_sigma = 0.1;                 // 噪声Sigma值
     cv::RNG rng;                          // OpenCV随机数产生器
-    double abc[3] = {0, 0, 0};            // abc参数的估计值
+    double ab[2] = {0, 0};                // abc参数的估计值
 
     vector<double> x_data, y_data;        // 数据
 
@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
         double x = i / 100.0;             // 其实可以改为double x=i/double(N)
         x_data.push_back(x);
         y_data.push_back(
-            exp(a * x * x + b * x + c) + rng.gaussian(w_sigma)
+            sin(a * x + b) + rng.gaussian(w_sigma)
         );
         cout << x_data[i] << " " << y_data[i] << endl;
     }
@@ -41,11 +41,11 @@ int main(int argc, char **argv) {
     for (int i = 0; i < N; i++) {
         problem.AddResidualBlock(     // 向问题中添加误差项
             // 使用自动求导, 模板参数：误差类型, 输出维度, 输入维度(待估计参数维度), 维数要与前面struct中一致
-            new ceres::AutoDiffCostFunction<CURVE_FITTING_COST, 1, 3>(
+            new ceres::AutoDiffCostFunction<CURVE_FITTING_COST, 1, 2>(
                 new CURVE_FITTING_COST(x_data[i], y_data[i])
             ),
             nullptr,                 // 核函数, 这里不使用, 为空
-            abc                      // 待估计参数
+            ab                      // 待估计参数
         );
     }
 
@@ -63,8 +63,8 @@ int main(int argc, char **argv) {
 
     // 输出结果
     cout << summary.BriefReport() << endl;
-    cout << "estimated a,b,c = ";
-    for (auto a:abc) cout << a << " ";
+    cout << "estimated a,b = ";
+    for (auto a:ab) cout << a << " ";
     cout << endl;
 
     return 0;
