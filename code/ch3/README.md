@@ -10,18 +10,20 @@
 
 ### ② 方式2（官网下载安装）
 
-1. 从[Eigen官网](http://eigen.tuxfamily.org/index.php?title=Main_Page)下载最新的版本（个人安装的时候最新版本是3.3.7）
+1. 从[Eigen官网](http://eigen.tuxfamily.org/index.php?title=Main_Page)下载最新的版本（个人安装的版本是3.3.5）
 
 2. 在下载的目录下面执行下述目录
 
    ```shell
    # 解压到/usr/include中
-   sudo tar -xzvf eigen-eigen-323c052e1731.tar.gz -C /usr/include
+   sudo tar -xzvf eigen-eigen-xxxxx.tar.gz -C /usr/include
    # 更改命名
-   sudo mv /usr/include/eigen-eigen-323c052e1731 /usr/include/eigen3
+   sudo mv /usr/include/eigen-eigen-xxxx /usr/include/eigen3
    # 将Eigen及其子目录移动到include下面（个人觉得没必要）
    # sudo cp -r /usr/include/eigen3/Eigen /usr/include
    ```
+
+> 注意：opencv_contrib安装对eigen的版本有需求，比如opencv-3.4.5采用3.3.7的Eigen会报错！
 
 检测版本的demo: 
 

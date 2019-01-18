@@ -35,7 +35,9 @@
    cd opencv-3.4.5
    mkdir build
    cd build
-   cmake -D WITH_VTK=ON ..
+   cmake -D OPENCV_EXTRA_MODULES_PATH=/home/ace/ACE/github/opencv_contrib-3.4.5/modules \
+       -D WITH_VTK=ON ..
+   
    make -j4
    sudo make install
    ```
