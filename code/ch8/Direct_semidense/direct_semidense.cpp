@@ -22,7 +22,7 @@ using namespace std;
 using namespace g2o;
 
 /********************************************
- * 本节演示了RGB-D上的稀疏直接法
+ * 本节演示了RGB-D上的半稠密直接法 
  ********************************************/
 
 // 一次测量的值, 包括一个世界坐标系下三维点与一个灰度值
@@ -46,7 +46,7 @@ inline Eigen::Vector2d project3Dto2D(float x, float y, float z, float fx, float 
 }
 
 // 直接法估计位姿
-// 输入：测量值（空间点的灰度）, 新的灰度图, 相机内参;  输出：相机位姿
+// 输入：测量值（空间点的灰度）, 新的灰度图, 相机内参;   输出：相机位姿
 // 返回：true为成功, false失败
 bool poseEstimationDirect(const vector<Measurement> &measurements, cv::Mat *gray, Eigen::Matrix3f &intrinsics,
                           Eigen::Isometry3d &Tcw);
@@ -64,7 +64,7 @@ public:
 
     virtual void computeError() {
         const VertexSE3Expmap *v = static_cast<const VertexSE3Expmap *> ( _vertices[0] );
-        Eigen::Vector3d x_local = v->estimate().map(x_world_);  // T*p
+        Eigen::Vector3d x_local = v->estimate().map(x_world_);
         float x = x_local[0] * fx_ / x_local[2] + cx_;
         float y = x_local[1] * fy_ / x_local[2] + cy_;
         // check x,y is in the image
@@ -95,7 +95,6 @@ public:
 
         // jacobian from se3 to u,v
         // NOTE that in g2o the Lie algebra is (\omega, \epsilon), where \omega is so(3) and \epsilon the translation
-        // 注意: 此处左边3x3等于8.15右边3x3, 右边3x3等于8.15左边3x3
         Eigen::Matrix<double, 2, 6> jacobian_uv_ksai;
 
         jacobian_uv_ksai(0, 0) = -x * y * invz_2 * fx_;
@@ -130,12 +129,13 @@ protected:
         uchar *data = &image_->data[int(y) * image_->step + int(x)];
         float xx = x - floor(x);
         float yy = y - floor(y);
-        return (1 - xx) * (1 - yy) * data[0] +
-               xx * (1 - yy) * data[1] +
-               (1 - xx) * yy * data[image_->step] +
-               xx * yy * data[image_->step + 1];
+        return float(
+            (1 - xx) * (1 - yy) * data[0] +
+            xx * (1 - yy) * data[1] +
+            (1 - xx) * yy * data[image_->step] +
+            xx * yy * data[image_->step + 1]
+        );
     }
-
 public:
     Eigen::Vector3d x_world_;                 // 3D point in world frame
     float cx_ = 0, cy_ = 0, fx_ = 0, fy_ = 0; // Camera intrinsics
@@ -176,24 +176,26 @@ int main(int argc, char **argv) {
         depth = cv::imread(path_to_dataset + "/" + depth_file, -1);
         if (color.data == nullptr || depth.data == nullptr)
             continue;
-        cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);  // 采用灰度值
+        cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
         if (index == 0) {
-            // 对第一帧提取FAST特征点
-            vector<cv::KeyPoint> keypoints;
-            cv::Ptr<cv::FastFeatureDetector> detector = cv::FastFeatureDetector::create();
-            detector->detect(color, keypoints);
-            for (auto kp:keypoints) {
-                // 去掉邻近边缘处的点
-                if (kp.pt.x < 20 || kp.pt.y < 20 || (kp.pt.x + 20) > color.cols || (kp.pt.y + 20) > color.rows)
-                    continue;
-                ushort d = depth.ptr<ushort>(cvRound(kp.pt.y))[cvRound(kp.pt.x)];
-                if (d == 0)
-                    continue;
-                Eigen::Vector3d p3d = project2Dto3D(kp.pt.x, kp.pt.y, d, fx, fy, cx, cy, depth_scale);
-                float grayscale = float(gray.ptr<uchar>(cvRound(kp.pt.y))[cvRound(kp.pt.x)]);
-                measurements.push_back(Measurement(p3d, grayscale));
-            }
+            // select the pixels with high gradients 
+            for (int x = 10; x < gray.cols - 10; x++)
+                for (int y = 10; y < gray.rows - 10; y++) {
+                    Eigen::Vector2d delta(
+                        gray.ptr<uchar>(y)[x + 1] - gray.ptr<uchar>(y)[x - 1],
+                        gray.ptr<uchar>(y + 1)[x] - gray.ptr<uchar>(y - 1)[x]
+                    );
+                    if (delta.norm() < 50)
+                        continue;
+                    ushort d = depth.ptr<ushort>(y)[x];
+                    if (d == 0)
+                        continue;
+                    Eigen::Vector3d p3d = project2Dto3D(x, y, d, fx, fy, cx, cy, depth_scale);
+                    float grayscale = float(gray.ptr<uchar>(y)[x]);
+                    measurements.push_back(Measurement(p3d, grayscale));
+                }
             prev_color = color.clone();
+            cout << "add total " << measurements.size() << " measurements." << endl;
             continue;
         }
         // 使用直接法计算相机运动
@@ -219,13 +221,18 @@ int main(int argc, char **argv) {
                 pixel_now(1, 0) >= color.rows)
                 continue;
 
-            float b = 255 * float(rand()) / RAND_MAX;
-            float g = 255 * float(rand()) / RAND_MAX;
-            float r = 255 * float(rand()) / RAND_MAX;
-            cv::circle(img_show, cv::Point2d(pixel_prev(0, 0), pixel_prev(1, 0)), 8, cv::Scalar(b, g, r), 2);
-            cv::circle(img_show, cv::Point2d(pixel_now(0, 0), pixel_now(1, 0) + color.rows), 8, cv::Scalar(b, g, r), 2);
-            cv::line(img_show, cv::Point2d(pixel_prev(0, 0), pixel_prev(1, 0)),
-                     cv::Point2d(pixel_now(0, 0), pixel_now(1, 0) + color.rows), cv::Scalar(b, g, r), 1);
+            float b = 0;
+            float g = 250;
+            float r = 0;
+            img_show.ptr<uchar>(pixel_prev(1, 0))[int(pixel_prev(0, 0)) * 3] = b;
+            img_show.ptr<uchar>(pixel_prev(1, 0))[int(pixel_prev(0, 0)) * 3 + 1] = g;
+            img_show.ptr<uchar>(pixel_prev(1, 0))[int(pixel_prev(0, 0)) * 3 + 2] = r;
+
+            img_show.ptr<uchar>(pixel_now(1, 0) + color.rows)[int(pixel_now(0, 0)) * 3] = b;
+            img_show.ptr<uchar>(pixel_now(1, 0) + color.rows)[int(pixel_now(0, 0)) * 3 + 1] = g;
+            img_show.ptr<uchar>(pixel_now(1, 0) + color.rows)[int(pixel_now(0, 0)) * 3 + 2] = r;
+            cv::circle(img_show, cv::Point2d(pixel_prev(0, 0), pixel_prev(1, 0)), 4, cv::Scalar(b, g, r), 2);
+            cv::circle(img_show, cv::Point2d(pixel_now(0, 0), pixel_now(1, 0) + color.rows), 4, cv::Scalar(b, g, r), 2);
         }
         cv::imshow("result", img_show);
         cv::waitKey(0);

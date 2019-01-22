@@ -4,12 +4,13 @@
 #include <vector>
 #include <chrono>
 
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/features2d.hpp>
 #include <opencv2/video/tracking.hpp>
 
 using namespace std;
+
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -26,7 +27,7 @@ int main(int argc, char **argv) {
     }
 
     string rgb_file, depth_file, time_rgb, time_depth;
-    list<cv::Point2f> keypoints;      // 因为要删除跟踪失败的点，使用list
+    list<cv::Point2f> keypoints;      // 因为要删除跟踪失败的点, 所以使用list
     cv::Mat color, depth, last_color;
 
     for (int index = 0; index < 100; index++) {
@@ -53,17 +54,16 @@ int main(int argc, char **argv) {
         vector<unsigned char> status;
         vector<float> error;
         chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
+        // 前一张图, 当前图, 前一张图的关键点, 当前图的关键点(输入为空---返回为跟上的关键点), 状态(为0代表跟丢), error
         cv::calcOpticalFlowPyrLK(last_color, color, prev_keypoints, next_keypoints, status, error);
         chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
         chrono::duration<double> time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
         cout << "LK Flow use time：" << time_used.count() << " seconds." << endl;
         // 把跟丢的点删掉
         int i = 0;
-        cout << "keypoints' size: " << keypoints.size() << endl;
-        cout << "next_keypoints' size: " << next_keypoints.size() << endl;
         for (auto iter = keypoints.begin(); iter != keypoints.end(); i++) {
-            if (status[i] == 0) {
-                iter = keypoints.erase(iter);
+            if (status[i] == 0) {              // 代表跟丢
+                iter = keypoints.erase(iter);  // 主要为了下一步, 删除那些跟丢的点
                 continue;
             }
             *iter = next_keypoints[i];
