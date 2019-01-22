@@ -1,8 +1,8 @@
 #include <iostream>
-#include <opencv2/core/core.hpp>
-#include <opencv2/features2d/features2d.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/calib3d.hpp>
 
 using namespace std;
 using namespace cv;
@@ -18,7 +18,7 @@ void find_feature_matches(
     std::vector<KeyPoint> &keypoints_2,
     std::vector<DMatch> &matches);
 
-// 通过匹配特征点来计算E, 在分解为R和t
+// 通过匹配特征点来计算E, 再分解为R和t
 void pose_estimation_2d2d(
     std::vector<KeyPoint> keypoints_1,
     std::vector<KeyPoint> keypoints_2,

@@ -1,20 +1,18 @@
 #include <iostream>
-#include <chrono>
 #include <opencv2/core.hpp>
-#include <opencv2/features2d.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/features2d.hpp>
 #include <opencv2/calib3d.hpp>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
-#include <g2o/core/base_vertex.h>
-#include <g2o/core/base_unary_edge.h>
-#include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_levenberg.h>
-#include <g2o/solvers/csparse/linear_solver_csparse.h>
-#include <g2o/types/sba/types_six_dof_expmap.h>
+
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
 
 using namespace std;
 using namespace cv;
+
 
 void find_feature_matches(
     const Mat &img_1, const Mat &img_2,
@@ -22,19 +20,120 @@ void find_feature_matches(
     std::vector<KeyPoint> &keypoints_2,
     std::vector<DMatch> &matches);
 
-// 像素坐标转相机归一化坐标
 Point2d pixel2cam(const Point2d &p, const Mat &K);
 
-void bundleAdjustment(
-    const vector<Point3f> points_3d,
-    const vector<Point2f> points_2d,
-    const Mat &K,
-    Mat &R, Mat &t
-);
+struct PnPProblem {
+    // 定义PnP结构体的接收数据: 2D点, 3D点, 相机内参
+    PnPProblem(double x, double y, double X, double Y, double Z, double cx, double cy, double fx, double fy) :
+        x_(x), y_(y), X_(X), Y_(Y), Z_(Z), cx_(cx), cy_(cy), fx_(fx), fy_(fy) {}
+    // 定义函数模板, 模板参数为位姿和残差
+    template<typename T>
+    bool operator()(const T *const pose, T *residual) const {
+        //3D点储存进p数组
+        T p[3];
+        p[0] = T(X_);
+        p[1] = T(Y_);
+        p[2] = T(Z_);
+
+        //相机位姿旋转
+        T r[3];
+        r[0] = pose[0];
+        r[1] = pose[1];
+        r[2] = pose[2];
+
+        //3D点旋转
+        T newP[3];
+        ceres::AngleAxisRotatePoint(r, p, newP);
+
+        //3D点平移
+        newP[0] += pose[3];
+        newP[1] += pose[4];
+        newP[2] += pose[5];
+
+        //像素坐标系到相机坐标系映射
+        T projectX = fx_ * newP[0] / newP[2] + cx_;
+        T projectY = fy_ * newP[1] / newP[2] + cy_;
+
+        //重投影后的残差
+        residual[0] = T(x_) - projectX;
+        residual[1] = T(y_) - projectY;
+
+        return true;
+    }
+
+    double x_, y_;
+    double X_, Y_, Z_;
+    double cx_, cy_;
+    double fx_, fy_;
+};
+
+void bundleAdjustmentCeres(const vector<Point3f> points_3d, const vector<Point2f> points_2d,
+                           const Mat &K, Mat &R, Mat &t, Mat &T) {
+    ceres::Problem problem;
+
+    Mat rotateVector;
+    Rodrigues(R, rotateVector);
+
+    double pose[6];
+    pose[0] = rotateVector.at<double>(0);
+    pose[1] = rotateVector.at<double>(1);
+    pose[2] = rotateVector.at<double>(2);
+    pose[3] = t.at<double>(0);
+    pose[4] = t.at<double>(1);
+    pose[5] = t.at<double>(2);
+
+    double fx = K.at<double>(0, 0);
+    double fy = K.at<double>(1, 1);
+    double cx = K.at<double>(0, 2);
+    double cy = K.at<double>(1, 2);
+
+    for (size_t i = 0; i < points_3d.size(); i++) {
+        //残差二维, 待优化参数六维, 不使用核函数
+        problem.AddResidualBlock(
+            new ceres::AutoDiffCostFunction<PnPProblem, 2, 6>(new PnPProblem(
+                points_2d[i].x, points_2d[i].y,
+                points_3d[i].x, points_3d[i].y, points_3d[i].z,
+                cx, cy,
+                fx, fy
+            )),
+            nullptr,
+            pose
+        );
+    }
+
+    //使用QR求解
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_QR;
+    //输出优化信息到std::cout
+    options.minimizer_progress_to_stdout = true;
+
+    //开始优化求解
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, &problem, &summary);
+    cout << summary.BriefReport() << endl;
+
+    //输出坐标转化，由旋转向量转换为旋转矩阵
+    rotateVector.at<double>(0) = pose[0];
+    rotateVector.at<double>(1) = pose[1];
+    rotateVector.at<double>(2) = pose[2];
+    Rodrigues(rotateVector, R);
+
+    t.at<double>(0) = pose[3];
+    t.at<double>(1) = pose[4];
+    t.at<double>(2) = pose[5];
+
+    T = (Mat_<double>(3, 4) <<
+                            R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2), t.at<double>(0),
+        R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2), t.at<double>(1),
+        R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2), t.at<double>(2)
+    );
+    cout << "优化后位姿参数T= " << endl << T << endl;
+}
+
 
 int main(int argc, char **argv) {
     if (argc != 5) {
-        cout << "usage: pose_estimation_3d2d img1 img2 depth1 depth2" << endl;
+        cout << "usage: pose_estimation_3d3d img1 img2 depth1 depth2" << endl;
         return 1;
     }
     //-- 读取图像
@@ -73,10 +172,10 @@ int main(int argc, char **argv) {
     cout << "R=" << endl << R << endl;
     cout << "t=" << endl << t << endl;
 
-    cout << "calling bundle adjustment" << endl;
-
-    bundleAdjustment(pts_3d, pts_2d, K, R, t);
+    Mat T;
+    bundleAdjustmentCeres(pts_3d, pts_2d, K, R, t, T);
 }
+
 
 void find_feature_matches(const Mat &img_1, const Mat &img_2,
                           std::vector<KeyPoint> &keypoints_1,
@@ -130,72 +229,3 @@ Point2d pixel2cam(const Point2d &p, const Mat &K) {
         (p.x - K.at<double>(0, 2)) / K.at<double>(0, 0),
         (p.y - K.at<double>(1, 2)) / K.at<double>(1, 1));
 }
-
-void bundleAdjustment(
-    const vector<Point3f> points_3d,
-    const vector<Point2f> points_2d,
-    const Mat &K, Mat &R, Mat &t) {
-    // 初始化g2o
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 3> > Block;    // pose 维度为 6, landmark 维度为 3
-    Block::LinearSolverType *linearSolver = new g2o::LinearSolverCSparse<Block::PoseMatrixType>();  // 线性方程求解器
-    Block *solver_ptr = new Block(linearSolver);                      // 矩阵块求解器
-    g2o::OptimizationAlgorithmLevenberg *solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    g2o::SparseOptimizer optimizer;
-    optimizer.setAlgorithm(solver);
-
-    // vertex
-    g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap(); // camera pose
-    Eigen::Matrix3d R_mat;
-    R_mat <<
-          R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2),
-        R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2),
-        R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2);
-    pose->setId(0);
-    pose->setEstimate(g2o::SE3Quat(
-        R_mat,
-        Eigen::Vector3d(t.at<double>(0, 0), t.at<double>(1, 0), t.at<double>(2, 0))
-    ));
-    optimizer.addVertex(pose);
-
-    int index = 1;
-    for (const Point3f p:points_3d) {  // landmarks
-        g2o::VertexSBAPointXYZ *point = new g2o::VertexSBAPointXYZ();
-        point->setId(index++);
-        point->setEstimate(Eigen::Vector3d(p.x, p.y, p.z));
-        point->setMarginalized(true);  // g2o 中必须设置 marginalized(边缘化) 参见第十讲内容
-        optimizer.addVertex(point);
-    }
-
-    // parameter: camera intrinsics
-    g2o::CameraParameters *camera = new g2o::CameraParameters(
-        K.at<double>(0, 0), Eigen::Vector2d(K.at<double>(0, 2), K.at<double>(1, 2)), 0
-    );
-    camera->setId(0);
-    optimizer.addParameter(camera);
-
-    // edges
-    index = 1;
-    for (const Point2f p:points_2d) {
-        g2o::EdgeProjectXYZ2UV *edge = new g2o::EdgeProjectXYZ2UV();
-        edge->setId(index);
-        edge->setVertex(0, dynamic_cast<g2o::VertexSBAPointXYZ *> (optimizer.vertex(index)));
-        edge->setVertex(1, pose);
-        edge->setMeasurement(Eigen::Vector2d(p.x, p.y));
-        edge->setParameterId(0, 0);
-        edge->setInformation(Eigen::Matrix2d::Identity());
-        optimizer.addEdge(edge);
-        index++;
-    }
-
-    chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
-    optimizer.setVerbose(true);
-    optimizer.initializeOptimization();
-    optimizer.optimize(100);
-    chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
-    chrono::duration<double> time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
-    cout << "optimization costs time: " << time_used.count() << " seconds." << endl;
-
-    cout << endl << "after optimization:" << endl;
-    cout << "T=" << endl << Eigen::Isometry3d(pose->estimate()).matrix() << endl;
-}
-

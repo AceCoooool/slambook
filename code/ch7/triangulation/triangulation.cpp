@@ -84,7 +84,7 @@ void find_feature_matches(const Mat &img_1, const Mat &img_2,
     Mat descriptors_1, descriptors_2;
     // used in OpenCV3
     Ptr<FeatureDetector> detector = ORB::create();
-    Ptr<DescriptorExtractor> descriptor = ORB::create();
+    // Ptr<DescriptorExtractor> descriptor = ORB::create();
     // use this if you are in OpenCV2
     // Ptr<FeatureDetector> detector = FeatureDetector::create ( "ORB" );
     // Ptr<DescriptorExtractor> descriptor = DescriptorExtractor::create ( "ORB" );
@@ -94,8 +94,8 @@ void find_feature_matches(const Mat &img_1, const Mat &img_2,
     detector->detect(img_2, keypoints_2);
 
     //-- 第二步:根据角点位置计算 BRIEF 描述子
-    descriptor->compute(img_1, keypoints_1, descriptors_1);
-    descriptor->compute(img_2, keypoints_2, descriptors_2);
+    detector->compute(img_1, keypoints_1, descriptors_1);
+    detector->compute(img_2, keypoints_2, descriptors_2);
 
     //-- 第三步:对两幅图像中的BRIEF描述子进行匹配，使用 Hamming 距离
     vector<DMatch> match;
@@ -146,8 +146,8 @@ void pose_estimation_2d2d(
     cout << "fundamental_matrix is " << endl << fundamental_matrix << endl;
 
     //-- 计算本质矩阵
-    Point2d principal_point(325.1, 249.7);                //相机主点, TUM dataset标定值
-    int focal_length = 521;                        //相机焦距, TUM dataset标定值
+    Point2d principal_point(325.1, 249.7);         // 相机主点, TUM dataset标定值
+    int focal_length = 521;                        // 相机焦距, TUM dataset标定值
     Mat essential_matrix;
     essential_matrix = findEssentialMat(points1, points2, focal_length, principal_point);
     cout << "essential_matrix is " << endl << essential_matrix << endl;

@@ -1,21 +1,18 @@
 #include <iostream>
-#include <chrono>
 #include <opencv2/core.hpp>
-#include <opencv2/features2d.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/features2d.hpp>
 #include <opencv2/calib3d.hpp>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
-#include <Eigen/SVD>
-#include <g2o/core/base_vertex.h>
-#include <g2o/core/base_unary_edge.h>
-#include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_gauss_newton.h>
-#include <g2o/solvers/eigen/linear_solver_eigen.h>
-#include <g2o/types/sba/types_six_dof_expmap.h>
+
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
 
 using namespace std;
 using namespace cv;
+
 
 void find_feature_matches(
     const Mat &img_1, const Mat &img_2,
@@ -23,7 +20,6 @@ void find_feature_matches(
     std::vector<KeyPoint> &keypoints_2,
     std::vector<DMatch> &matches);
 
-// 像素坐标转相机归一化坐标
 Point2d pixel2cam(const Point2d &p, const Mat &K);
 
 void pose_estimation_3d3d(
@@ -32,59 +28,100 @@ void pose_estimation_3d3d(
     Mat &R, Mat &t
 );
 
-void bundleAdjustment(
-    const vector<Point3f> &points_3d,
-    const vector<Point3f> &points_2d,
-    Mat &R, Mat &t
-);
+struct ICPProblem {
+    // 定义ICP结构体的接收数据: 3D, 3D
+    ICPProblem(double x1, double y1, double z1, double x2, double y2, double z2) :
+        x1_(x1), y1_(y1), z1_(z1), x2_(x2), y2_(y2), z2_(z2) {}
+    // 定义函数模板, 模板参数为位姿和残差
+    template<typename T>
+    bool operator()(const T *const pose, T *residual) const {
+        //第二帧里的3D点
+        T p[3];
+        p[0] = T(x2_);
+        p[1] = T(y2_);
+        p[2] = T(z2_);
 
-// g2o edge
-class EdgeProjectXYZRGBDPoseOnly : public g2o::BaseUnaryEdge<3, Eigen::Vector3d, g2o::VertexSE3Expmap> {
-public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-    EdgeProjectXYZRGBDPoseOnly(const Eigen::Vector3d &point) : _point(point) {}
+        T r[3];
+        r[0] = pose[0];
+        r[1] = pose[1];
+        r[2] = pose[2];
 
-    virtual void computeError() {
-        const g2o::VertexSE3Expmap *pose = static_cast<const g2o::VertexSE3Expmap *> ( _vertices[0] );
-        // measurement is p, point is p'
-        _error = _measurement - pose->estimate().map(_point);
+        T newP[3];
+        ceres::AngleAxisRotatePoint(r, p, newP);
+
+        newP[0] += pose[3];
+        newP[1] += pose[4];
+        newP[2] += pose[5];
+
+        //由于是3D-3D，所以误差为3维
+        residual[0] = T(x1_) - newP[0];
+        residual[1] = T(y1_) - newP[1];
+        residual[2] = T(z1_) - newP[2];
+
+        return true;
     }
 
-    virtual void linearizeOplus() {
-        g2o::VertexSE3Expmap *pose = static_cast<g2o::VertexSE3Expmap *>(_vertices[0]);
-        g2o::SE3Quat T(pose->estimate());
-        Eigen::Vector3d xyz_trans = T.map(_point);
-        double x = xyz_trans[0];
-        double y = xyz_trans[1];
-        double z = xyz_trans[2];
-
-        _jacobianOplusXi(0, 0) = 0;
-        _jacobianOplusXi(0, 1) = -z;
-        _jacobianOplusXi(0, 2) = y;
-        _jacobianOplusXi(0, 3) = -1;
-        _jacobianOplusXi(0, 4) = 0;
-        _jacobianOplusXi(0, 5) = 0;
-
-        _jacobianOplusXi(1, 0) = z;
-        _jacobianOplusXi(1, 1) = 0;
-        _jacobianOplusXi(1, 2) = -x;
-        _jacobianOplusXi(1, 3) = 0;
-        _jacobianOplusXi(1, 4) = -1;
-        _jacobianOplusXi(1, 5) = 0;
-
-        _jacobianOplusXi(2, 0) = -y;
-        _jacobianOplusXi(2, 1) = x;
-        _jacobianOplusXi(2, 2) = 0;
-        _jacobianOplusXi(2, 3) = 0;
-        _jacobianOplusXi(2, 4) = 0;
-        _jacobianOplusXi(2, 5) = -1;
-    }
-
-    bool read(istream &in) {}
-    bool write(ostream &out) const {}
-protected:
-    Eigen::Vector3d _point;
+    double x1_, y1_, z1_;
+    double x2_, y2_, z2_;
 };
+
+void bundleAdjustmentCeres(const vector<Point3f> pts1, const vector<Point3f> pts2,
+                           Mat &R, Mat &t, Mat &T) {
+    ceres::Problem problem;
+
+    Mat rotateVector;
+    Rodrigues(R, rotateVector);
+
+    double pose[6];
+    pose[0] = rotateVector.at<double>(0);
+    pose[1] = rotateVector.at<double>(1);
+    pose[2] = rotateVector.at<double>(2);
+    pose[3] = t.at<double>(0);
+    pose[4] = t.at<double>(1);
+    pose[5] = t.at<double>(2);
+
+    for (size_t i = 0; i < pts1.size(); i++) {
+        //残差二维, 待优化参数六维, 不使用核函数
+        problem.AddResidualBlock(
+            new ceres::AutoDiffCostFunction<ICPProblem, 3, 6>(new ICPProblem(
+                pts1[i].x, pts1[i].y, pts1[i].z,
+                pts2[i].x, pts2[i].y, pts2[i].z
+            )),
+            nullptr,
+            pose
+        );
+    }
+
+    //使用QR求解
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_QR;
+    //输出优化信息到std::cout
+    options.minimizer_progress_to_stdout = true;
+
+    //开始优化求解
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, &problem, &summary);
+    cout << summary.BriefReport() << endl;
+
+    //输出坐标转化，由旋转向量转换为旋转矩阵
+    rotateVector.at<double>(0) = pose[0];
+    rotateVector.at<double>(1) = pose[1];
+    rotateVector.at<double>(2) = pose[2];
+    Rodrigues(rotateVector, R);
+
+    t.at<double>(0) = pose[3];
+    t.at<double>(1) = pose[4];
+    t.at<double>(2) = pose[5];
+
+    T = (Mat_<double>(4, 4) <<
+                            R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2), t.at<double>(0),
+        R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2), t.at<double>(1),
+        R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2), t.at<double>(2),
+        0, 0, 0, 1
+    );
+    cout << "优化后位姿参数T= " << endl << T << endl;
+}
+
 
 int main(int argc, char **argv) {
     if (argc != 5) {
@@ -129,19 +166,10 @@ int main(int argc, char **argv) {
     cout << "t_inv = " << -R.t() * t << endl;
 
     cout << "calling bundle adjustment" << endl;
-
-    bundleAdjustment(pts1, pts2, R, t);
-
-    // verify p1 = R*p2 + t
-    for (int i = 0; i < 5; i++) {
-        cout << "p1 = " << pts1[i] << endl;
-        cout << "p2 = " << pts2[i] << endl;
-        cout << "(R*p2+t) = " <<
-             R * (Mat_<double>(3, 1) << pts2[i].x, pts2[i].y, pts2[i].z) + t
-             << endl;
-        cout << endl;
-    }
+    Mat T;
+    bundleAdjustmentCeres(pts1, pts2, R, t, T);
 }
+
 
 void find_feature_matches(const Mat &img_1, const Mat &img_2,
                           std::vector<KeyPoint> &keypoints_1,
@@ -247,55 +275,4 @@ void pose_estimation_3d3d(
     t = (Mat_<double>(3, 1) << t_(0, 0), t_(1, 0), t_(2, 0));
 }
 
-void bundleAdjustment(
-    const vector<Point3f> &pts1,
-    const vector<Point3f> &pts2,
-    Mat &R, Mat &t) {
-    // 初始化g2o
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 3> > Block;    // pose维度为 6, landmark 维度为 3
-    Block::LinearSolverType *linearSolver = new g2o::LinearSolverEigen<Block::PoseMatrixType>(); // 线性方程求解器
-    Block *solver_ptr = new Block(linearSolver);                      // 矩阵块求解器
-    g2o::OptimizationAlgorithmGaussNewton *solver = new g2o::OptimizationAlgorithmGaussNewton(solver_ptr);
-    g2o::SparseOptimizer optimizer;
-    optimizer.setAlgorithm(solver);
 
-    // vertex
-    g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap(); // camera pose
-    pose->setId(0);
-    Eigen::Matrix3d R_mat;
-    R_mat << R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2),
-        R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2),
-        R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2);
-    pose->setEstimate(g2o::SE3Quat(
-        R_mat,
-        Eigen::Vector3d(t.at<double>(0, 0), t.at<double>(1, 0), t.at<double>(2, 0))
-    ));
-    optimizer.addVertex(pose);
-
-    // edges
-    int index = 1;
-    vector<EdgeProjectXYZRGBDPoseOnly *> edges;
-    for (size_t i = 0; i < pts1.size(); i++) {
-        EdgeProjectXYZRGBDPoseOnly *edge = new EdgeProjectXYZRGBDPoseOnly(
-            Eigen::Vector3d(pts2[i].x, pts2[i].y, pts2[i].z));
-        edge->setId(index);
-        edge->setVertex(0, pose);
-        edge->setMeasurement(Eigen::Vector3d(
-            pts1[i].x, pts1[i].y, pts1[i].z));
-        edge->setInformation(Eigen::Matrix3d::Identity() * 1e4);
-        optimizer.addEdge(edge);
-        index++;
-        edges.push_back(edge);
-    }
-
-    chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
-    optimizer.setVerbose(true);
-    optimizer.initializeOptimization();
-    optimizer.optimize(10);
-    chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
-    chrono::duration<double> time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
-    cout << "optimization costs time: " << time_used.count() << " seconds." << endl;
-
-    cout << endl << "after optimization:" << endl;
-    cout << "T=" << endl << Eigen::Isometry3d(pose->estimate()).matrix() << endl;
-}

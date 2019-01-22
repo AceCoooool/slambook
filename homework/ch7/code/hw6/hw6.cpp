@@ -27,7 +27,8 @@ Point2d pixel2cam(const Point2d &p, const Mat &K);
 
 void bundleAdjustment(
     const vector<Point3f> points_3d,
-    const vector<Point2f> points_2d,
+    const vector<Point2f> points_2d_1,
+    const vector<Point2f> points_2d_2,
     const Mat &K,
     Mat &R, Mat &t
 );
@@ -50,7 +51,7 @@ int main(int argc, char **argv) {
     Mat d1 = imread(argv[3], CV_LOAD_IMAGE_UNCHANGED);       // 深度图为16位无符号数, 单通道图像
     Mat K = (Mat_<double>(3, 3) << 520.9, 0, 325.1, 0, 521.0, 249.7, 0, 0, 1);
     vector<Point3f> pts_3d;
-    vector<Point2f> pts_2d;
+    vector<Point2f> pts_2d_1, pts_2d_2;
     for (DMatch m:matches) {
         // 获得匹配点的深度
         ushort d = d1.ptr<unsigned short>(int(keypoints_1[m.queryIdx].pt.y))[int(keypoints_1[m.queryIdx].pt.x)];
@@ -59,14 +60,15 @@ int main(int argc, char **argv) {
         float dd = d / 5000.0;
         Point2d p1 = pixel2cam(keypoints_1[m.queryIdx].pt, K); // 像素坐标到相机坐标
         pts_3d.push_back(Point3f(p1.x * dd, p1.y * dd, dd));   // 物体的坐标(相机坐标系下 XYZ)
-        pts_2d.push_back(keypoints_2[m.trainIdx].pt);
+        pts_2d_1.push_back(keypoints_1[m.queryIdx].pt);
+        pts_2d_2.push_back(keypoints_2[m.trainIdx].pt);
     }
 
     cout << "3d-2d pairs: " << pts_3d.size() << endl;
 
     // 这里暂时不考虑相机的畸变系数
     Mat r, t;
-    solvePnP(pts_3d, pts_2d, K, Mat(), r, t, false, SOLVEPNP_EPNP); // 调用OpenCV 的 PnP 求解, 可选择EPNP, DLS等方法
+    solvePnP(pts_3d, pts_2d_2, K, Mat(), r, t, false, SOLVEPNP_EPNP); // 调用OpenCV 的 PnP 求解, 可选择EPNP, DLS等方法
     Mat R;
     cv::Rodrigues(r, R); // r为旋转向量形式, 用Rodrigues公式转换为矩阵
 
@@ -75,7 +77,7 @@ int main(int argc, char **argv) {
 
     cout << "calling bundle adjustment" << endl;
 
-    bundleAdjustment(pts_3d, pts_2d, K, R, t);
+    bundleAdjustment(pts_3d, pts_2d_1, pts_2d_2, K, R, t);
 }
 
 void find_feature_matches(const Mat &img_1, const Mat &img_2,
@@ -133,7 +135,8 @@ Point2d pixel2cam(const Point2d &p, const Mat &K) {
 
 void bundleAdjustment(
     const vector<Point3f> points_3d,
-    const vector<Point2f> points_2d,
+    const vector<Point2f> points_2d_1,
+    const vector<Point2f> points_2d_2,
     const Mat &K, Mat &R, Mat &t) {
     // 初始化g2o
     typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 3> > Block;    // pose 维度为 6, landmark 维度为 3
@@ -143,21 +146,28 @@ void bundleAdjustment(
     g2o::SparseOptimizer optimizer;
     optimizer.setAlgorithm(solver);
 
-    // vertex
-    g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap(); // camera pose
+    // vertex for first camera
+    g2o::VertexSE3Expmap *pose_one = new g2o::VertexSE3Expmap();
+    pose_one->setId(0);
+    pose_one->setFixed(1);  // 固定
+    pose_one->setEstimate(g2o::SE3Quat());
+    optimizer.addVertex(pose_one);
+
+    // vertex for second camera
+    g2o::VertexSE3Expmap *pose_two = new g2o::VertexSE3Expmap(); // camera pose
     Eigen::Matrix3d R_mat;
     R_mat <<
           R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2),
         R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2),
         R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2);
-    pose->setId(0);
-    pose->setEstimate(g2o::SE3Quat(
+    pose_two->setId(1);
+    pose_two->setEstimate(g2o::SE3Quat(
         R_mat,
         Eigen::Vector3d(t.at<double>(0, 0), t.at<double>(1, 0), t.at<double>(2, 0))
     ));
-    optimizer.addVertex(pose);
+    optimizer.addVertex(pose_two);
 
-    int index = 1;
+    int index = 2;
     for (const Point3f p:points_3d) {  // landmarks
         g2o::VertexSBAPointXYZ *point = new g2o::VertexSBAPointXYZ();
         point->setId(index++);
@@ -174,15 +184,34 @@ void bundleAdjustment(
     optimizer.addParameter(camera);
 
     // edges
-    index = 1;
-    for (const Point2f p:points_2d) {
+    int edgeCount = 0;
+
+    // 第一个相机观测
+    index = 2;
+    for (const Point2f p:points_2d_1) {
+        // 重投影误差
         g2o::EdgeProjectXYZ2UV *edge = new g2o::EdgeProjectXYZ2UV();
-        edge->setId(index);
+        edge->setId(edgeCount++);
         edge->setVertex(0, dynamic_cast<g2o::VertexSBAPointXYZ *> (optimizer.vertex(index)));
-        edge->setVertex(1, pose);
+        edge->setVertex(1, dynamic_cast<g2o::VertexSE3Expmap *>(optimizer.vertex(0)));
         edge->setMeasurement(Eigen::Vector2d(p.x, p.y));
         edge->setParameterId(0, 0);
         edge->setInformation(Eigen::Matrix2d::Identity());
+        optimizer.addEdge(edge);
+        index++;
+    }
+
+    // 第二个相机观测
+    index = 2;
+    for (const Point2f p:points_2d_2) {
+        // 重投影误差
+        g2o::EdgeProjectXYZ2UV *edge = new g2o::EdgeProjectXYZ2UV();
+        edge->setId(edgeCount++);
+        edge->setVertex(0, dynamic_cast<g2o::VertexSBAPointXYZ *> (optimizer.vertex(index)));
+        edge->setVertex(1, dynamic_cast<g2o::VertexSE3Expmap *>(optimizer.vertex(1)));
+        edge->setMeasurement(Eigen::Vector2d(p.x, p.y));
+        edge->setParameterId(0, 0);
+        edge->setInformation(Eigen::Matrix2d::Identity());  // 默认加权为1
         optimizer.addEdge(edge);
         index++;
     }
@@ -196,6 +225,7 @@ void bundleAdjustment(
     cout << "optimization costs time: " << time_used.count() << " seconds." << endl;
 
     cout << endl << "after optimization:" << endl;
-    cout << "T=" << endl << Eigen::Isometry3d(pose->estimate()).matrix() << endl;
+    cout << "T1=" << endl << Eigen::Isometry3d(pose_one->estimate()).matrix() << endl;
+    cout << "T2=" << endl << Eigen::Isometry3d(pose_two->estimate()).matrix() << endl;
 }
 

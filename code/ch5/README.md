@@ -36,6 +36,7 @@
    mkdir build
    cd build
    cmake -D OPENCV_EXTRA_MODULES_PATH=/home/ace/ACE/github/opencv_contrib-3.4.5/modules \
+       -D OPENCV_ENABLE_NONFREE=ON \
        -D WITH_VTK=ON ..
    
    make -j4

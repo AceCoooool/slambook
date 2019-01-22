@@ -44,5 +44,29 @@
 
 ### SIFT
 
+- `static Ptr<SIFT> cv::xfeatures2d::SIFT::create(int nfeatures=0, int nOctaveLayers=3, double contrastThreshold=0.04, double edgeThreshold=10, double signma=1.6)`：创建SIFT构造器
+  - nfeatures：保留的特征数（选取最佳的nfeatures个）
+  - nOctaveLayers：每一组包含的层数
+  - contrastThreshold：对比度阈值，用于过滤掉弱对比度区域中的弱特征（记得该值越大，产生的特征数越少）
+  - edgeThreshold：用于过滤掉类似边缘特征的阈值。其含义与constrastThreshold不同，edgeThreshold越大，保留的特征越多
+  - sigma：第0层（octave0）上面高斯核对应的sigma。（如果使用图片质量较差，则可能需要降低该值）
 
+### SURF
 
+- `static Ptr<SURF> cv::xfeatures2d::SURF::create(double hessianThreshold=100, int nOctaves=4, int nOctaveLayers=3, bool extended=false, bool upright=false)`：创建SURF构造器
+  - hessianThreshold：
+
+### 绘制特征点
+
+- `void cv::drawKeypoints(InputArray image, const std::vector<KeyPoint> &keypoints, InputOutputArray outImage, const Scalar& color=Scalar::all(-1), int flags=DrawMatchesFlags::DEFAULT)`：绘制特征点
+  - image：图像
+  - keypoints：从图像上获得的关键点
+  - outImage：输出图像（具体输出的情况取决于flags）
+  - color：关键点的颜色
+  - flags：总共有下述四种（都是`DrawMatchesFlags::xxx`）
+    - DEFAULT=0：输出图像会被created（即调用了Mat::create）--- 其实可以简单理解为会分配内存
+    - DRAW_OVER_OUTIMG =1：输出图片不会被created --- 即不会调用分配内存，需要预先自己分配
+    - NOT_DRAW_SINGLE_POINTS=2 ：单个关键点不会绘制
+    - DRAW_RICH_KEYPOINTS =4：关键点大小和方向均会绘制
+
+- `void cv::drawMatches(InputArray img1, const std::vector<KeyPoint>& keypoints1, InputArray img2, const std::vector<KeyPoint>& keypoints2, const std::vector<DMatch>& matches1to2, InputOutputArray outImg, )`
